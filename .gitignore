@@ -1,0 +1,7 @@
+__pycache__/
+config.py
+interviews.json
+chat_history.json
+venv/
+env/
+.DS_Store
