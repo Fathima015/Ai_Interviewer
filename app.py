@@ -23,7 +23,7 @@ RESULT_FILE = os.path.join(BASE_DIR, "interviews.json")
 # --- GLOBAL STORAGE ---
 # Store structured candidate data here to pass to the UI
 active_candidates = {} 
-# Store active chat sessions (Gemini objects) - THIS WAS MISSING BEFORE
+# Store active chat sessions (Gemini objects)
 active_chats = {} 
 
 print(f"\n📂 LOGGING TO:\n  -> {LOG_FILE}\n  -> {RESULT_FILE}\n")
@@ -113,7 +113,7 @@ def save_result(candidate, score, feedback, cheated=False):
     except Exception as e:
         print(f"❌ RESULT SAVE FAILED: {e}")
 
-# --- UI TEMPLATE (Includes canary.png Logo Support) ---
+# --- UI TEMPLATE (With Suggestions Added) ---
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="en">
@@ -139,6 +139,10 @@ HTML_TEMPLATE = r"""
         /* Hide scrollbar but keep functionality */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Suggestion Pill Hover Animation */
+        .suggestion-chip { transition: all 0.2s ease; }
+        .suggestion-chip:active { transform: scale(0.95); }
     </style>
 </head>
 <body class="bg-gray-100 h-dvh flex items-center justify-center font-sans overflow-hidden" id="bodyBg">
@@ -157,22 +161,18 @@ HTML_TEMPLATE = r"""
             </div>
 
             <div class="p-4 md:p-6 w-full text-center flex flex-row md:flex-col items-center justify-between md:justify-center gap-4 flex-grow">
-                
                 <div class="w-12 h-12 md:w-20 md:h-20 rounded-full bg-white border-2 border-indigo-100 flex items-center justify-center text-indigo-400 text-xl md:text-3xl font-bold shadow-sm shrink-0">
                     <i class="fas fa-user"></i>
                 </div>
-                
                 <div class="text-left md:text-center flex-grow">
                     <h2 id="sbName" class="text-lg md:text-xl font-bold text-gray-800 leading-tight">Candidate Name</h2>
                     <p id="sbEmail" class="text-xs text-gray-500 mt-0 md:mt-1 truncate max-w-[150px] md:max-w-none">email@example.com</p>
-                    
                     <div class="hidden md:block mt-6">
                         <div class="mt-2 inline-flex items-center px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-bold border border-green-100">
                             <span class="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span> Live Session
                         </div>
                     </div>
                 </div>
-                
                 <div class="md:hidden">
                     <span class="flex h-3 w-3 relative">
                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -196,7 +196,6 @@ HTML_TEMPLATE = r"""
                         <p class="text-[10px] text-gray-500 font-bold tracking-widest uppercase">Canary Digital.ai</p>
                     </div>
                 </div>
-                
                 <div class="flex items-center gap-2" id="cheatIndicator" style="display:none;">
                     <span class="hidden md:inline text-xs font-bold text-red-500 uppercase tracking-wider">Warnings:</span>
                     <div class="flex gap-1">
@@ -210,13 +209,29 @@ HTML_TEMPLATE = r"""
             <div id="chatBox" class="flex-grow p-4 md:p-6 overflow-y-auto flex flex-col gap-3 bg-slate-50 no-scrollbar touch-pan-y"></div>
 
             <div class="p-4 md:p-6 border-t bg-white flex flex-col items-center pb-8 md:pb-6">
+                
+                <div id="quickReplies" class="flex flex-wrap justify-center gap-2 mb-4 opacity-0 transition-opacity duration-500 pointer-events-none">
+                    <button onclick="sendQuickReply('Yes, I am ready.')" class="suggestion-chip px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200">
+                        Yes, I'm ready
+                    </button>
+                    <button onclick="sendQuickReply('Next question, please.')" class="suggestion-chip px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200">
+                        Next Question
+                    </button>
+                    <button onclick="sendQuickReply('Could you repeat that?')" class="suggestion-chip px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200">
+                        Please Repeat
+                    </button>
+                    <button onclick="sendQuickReply('Thank you.')" class="suggestion-chip px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200">
+                        Thank You
+                    </button>
+                </div>
+
                 <div id="statusText" class="text-[10px] md:text-xs font-bold text-gray-400 uppercase mb-3 tracking-widest">Ready</div>
                 
                 <button id="mainBtn" onclick="toggleInterview()" class="w-16 h-16 md:w-20 md:h-20 rounded-full bg-indigo-600 text-white shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center">
                     <i id="mainIcon" class="fas fa-microphone text-2xl md:text-3xl"></i>
                 </button>
                 
-                <p id="liveTranscript" class="h-5 text-gray-400 text-xs mt-3 italic overflow-hidden text-center max-w-xs md:max-w-lg">Tap mic to start...</p>
+                <p id="liveTranscript" class="h-5 text-gray-400 text-xs mt-3 italic overflow-hidden text-center max-w-xs md:max-w-lg">Start talking into the mic...</p>
             </div>
         </div>
     </div>
@@ -442,7 +457,6 @@ HTML_TEMPLATE = r"""
 
         function startRealInterview() {
             const elem = document.documentElement;
-            // Attempt Fullscreen (May require user gesture on mobile)
             if (elem.requestFullscreen) { elem.requestFullscreen().catch(() => {}); } 
             else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen(); }
             
@@ -450,13 +464,7 @@ HTML_TEMPLATE = r"""
             
             // RESPONSIVE SIDEBAR ANIMATION
             const sb = document.getElementById('resumeSidebar');
-            
-            // Remove "hidden" state
             sb.classList.remove('w-0', 'md:w-0', 'h-0', 'opacity-0');
-            
-            // Add "active" state
-            // Desktop: 25% width, Full Height, Right Border
-            // Mobile: Full width, Auto Height, Bottom Border
             sb.classList.add('w-full', 'md:w-1/4', 'h-auto', 'md:h-full', 'opacity-100', 'border-b', 'md:border-b-0', 'md:border-r');
         }
 
@@ -513,7 +521,11 @@ HTML_TEMPLATE = r"""
             mainBtn.classList.remove("animate-pulse");
             statusText.innerText = "Ready";
             
-            // Hide Sidebar logic reversed
+            // Hide Suggestion Chips
+            const replies = document.getElementById('quickReplies');
+            replies.classList.add('opacity-0', 'pointer-events-none');
+
+            // Hide Sidebar
             const sb = document.getElementById('resumeSidebar');
             sb.classList.add('w-0', 'md:w-0', 'h-0', 'opacity-0');
             sb.classList.remove('w-full', 'md:w-1/4', 'h-auto', 'md:h-full', 'opacity-100', 'border-b', 'md:border-b-0', 'md:border-r');
@@ -550,13 +562,32 @@ HTML_TEMPLATE = r"""
         
         function toggleInterview() {
             if(!isSessionActive && !isDisqualified) { 
-                isSessionActive=true; mainIcon.className="fas fa-stop"; mainBtn.classList.add("animate-pulse"); statusText.innerText="Connecting..."; 
+                isSessionActive=true; 
+                mainIcon.className="fas fa-stop"; 
+                mainBtn.classList.add("animate-pulse"); 
+                statusText.innerText="Connecting..."; 
+                
+                // Show Suggestion Chips
+                const replies = document.getElementById('quickReplies');
+                replies.classList.remove('opacity-0', 'pointer-events-none');
+
                 silenceWarningCount = 0; 
                 const name = document.getElementById('sbName').innerText;
                 const g = name !== "Candidate Name" ? `Hello ${name}. I have reviewed your resume. Shall we begin?` : "Hello! What is your name?";
                 addMessage('Divya',g); speak(g); 
             }
             else if (!isDisqualified) { resetToPopup(); }
+        }
+        
+        // NEW FUNCTION: Send Quick Reply
+        function sendQuickReply(text) {
+            if (!isSessionActive) {
+                // If they click 'Yes' before hitting Start Mic, auto-start.
+                toggleInterview();
+                setTimeout(() => handleUserMessage(text), 1000); 
+            } else {
+                handleUserMessage(text);
+            }
         }
         
         recognition.onstart=()=>{ if(isSessionActive) statusText.innerText="Listening..."; };
